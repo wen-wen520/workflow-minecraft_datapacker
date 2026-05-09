@@ -1,0 +1,23 @@
+{
+	"info": "config",
+	"config": {
+		"artifacts": [
+			{
+				"id": "main_pack",
+				"name": "Bed_War_Portal",
+				"path": "src",
+				"version": "2.11605.0.1",
+				"build": "1",
+				"minecraft": "1.16.5"
+			},
+			{
+				"id": "addon_pack",
+				"name": "Bed_War_Addon",
+				"path": "addons/extra",
+				"version": "1.0.2",
+				"build": "5",
+				"minecraft": "1.16.5"
+			}
+		]
+	}
+}

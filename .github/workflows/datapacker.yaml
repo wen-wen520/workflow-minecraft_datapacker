@@ -1,0 +1,110 @@
+name: Shared Package Logic
+
+on:
+  workflow_call:
+
+jobs:
+  build-and-upload:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Process Artifacts and Prepare Metadata
+        id: processor
+        shell: pwsh
+        env:
+          GITHUB_RUN_NUMBER: ${{ github.run_number }}
+        run: |
+          # 1. Setup paths and variables
+          $configPath = ".github/workflows/config.json"
+          $systime = Get-Date -Format "yyyy-MM-dd HH:mm:ss 'UTC'"
+          
+          if (-not (Test-Path $configPath)) {
+            Write-Error "Config file not found: $configPath"
+            exit 1
+          }
+
+          # 2. Read and parse Config node
+          $jsonContent = Get-Content $configPath -Raw | ConvertFrom-Json
+          $artifacts = $jsonContent.config.artifacts
+
+          if ($null -eq $artifacts) {
+            Write-Host "No artifacts node found in config."
+            echo "count=0" >> $env:GITHUB_OUTPUT
+            exit 0
+          }
+
+          # 3. Loop through artifacts (Process up to 3)
+          $count = 0
+          foreach ($item in $artifacts) {
+            if ($count -ge 3) { break }
+            
+            $id = $item.id
+            $name = $item.name
+            $path = $item.path
+            $version = $item.version
+            
+            Write-Host "------------------------------------"
+            Write-Host "Processing Artifact: $name ($id)"
+            Write-Host "Path: $path"
+
+            if (-not (Test-Path $path)) {
+              Write-Warning "Path $path does not exist, skipping..."
+              continue
+            }
+
+            # 4. Modify pack.mcmeta
+            $mcmetaPath = Join-Path $path "pack.mcmeta"
+            if (Test-Path $mcmetaPath) {
+              Write-Host "Updating $mcmetaPath"
+              $mcmeta = Get-Content $mcmetaPath -Raw | ConvertFrom-Json
+              
+              $extraDescription = @(
+                "`n",
+                "§7Github Auto Build§r`n",
+                "§7Action Number: §n§b【$env:GITHUB_RUN_NUMBER】§r`n",
+                "§7Build Time: §n§b【$systime】§r`n"
+              )
+
+              if ($mcmeta.pack.description -isnot [Array]) {
+                $mcmeta.pack.description = @($mcmeta.pack.description)
+              }
+              $mcmeta.pack.description += $extraDescription
+
+              $mcmetaJson = $mcmeta | ConvertTo-Json -Depth 10
+              [System.IO.File]::WriteAllText($mcmetaPath, $mcmetaJson)
+            }
+
+            # 5. Generate Artifact Name
+            $finalArtifactName = "${name}-v${version}-alpha${env:GITHUB_RUN_NUMBER}"
+            
+            # 6. Export to GITHUB_OUTPUT for reliability
+            echo "name_$count=$finalArtifactName" >> $env:GITHUB_OUTPUT
+            echo "path_$count=$path" >> $env:GITHUB_OUTPUT
+
+            $count++
+          }
+          echo "count=$count" >> $env:GITHUB_OUTPUT
+
+      # Upload steps using step outputs (steps.processor.outputs.name_0)
+      - name: Upload Artifact 1
+        if: steps.processor.outputs.count >= 1
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.processor.outputs.name_0 }}
+          path: ${{ steps.processor.outputs.path_0 }}
+
+      - name: Upload Artifact 2
+        if: steps.processor.outputs.count >= 2
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.processor.outputs.name_1 }}
+          path: ${{ steps.processor.outputs.path_1 }}
+
+      - name: Upload Artifact 3
+        if: steps.processor.outputs.count >= 3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.processor.outputs.name_2 }}
+          path: ${{ steps.processor.outputs.path_2 }}
