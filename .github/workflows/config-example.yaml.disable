@@ -1,0 +1,30 @@
+name: DataPacker Workflow Example
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  call-datapacker:
+    uses: wen-wen520/workflow-minecraft_datapacker/.github/workflows/datapacker.yaml@v2.0.0
+    with:
+      # 0.Basic Parameters
+      pack_count: 2                   # Handle 2 packs
+      modify_mcmeta: true             # Enable pack.mcmeta modification
+      build_type: "alpha"              # Set build type for naming and metadata
+      append_build_info: true         # Enable appending build number info to artifact name and metadata
+
+      # 1. First Pack's detailed parameters
+      p1_id: "core_system"			  # Unique identifier for the first pack
+      p1_name: "MyCorePack"	          # Display name for the first pack
+      p1_path: "src"         # File system path to the first pack's directory
+      p1_version: "0.1.2.0"             # Version string for the first pack, used in naming and metadata
+
+      # 2. Second Pack's detailed parameters
+      p2_id: "addon_features"
+      p2_name: "FeatureAddon"
+      p2_path: "./packs/addon"
+      p2_version: "0.8.5"
+
+	  # 3. Third Pack's detailed parameters (not used in this example since pack_count is 2)

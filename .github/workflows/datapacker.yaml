@@ -2,6 +2,66 @@ name: Shared Package Logic
 
 on:
   workflow_call:
+    inputs:
+      modify_mcmeta:
+        description: 'Whether to modify pack.mcmeta file'
+        required: true
+        type: boolean
+        default: true
+      pack_count:
+        description: 'Number of packs to process (1-3)'
+        required: true
+        type: number
+        default: 1
+      build_type:
+        description: 'Build stage name (e.g., alpha, beta, release)'
+        required: false
+        type: string
+        default: 'alpha'
+      append_build_info:
+        description: 'Whether to append build number info to artifact name and metadata'
+        required: false
+        type: boolean
+        default: true
+      # Pack 1 Parameters
+      p1_id:
+        type: string
+        required: true
+      p1_name:
+        type: string
+        required: true
+      p1_path:
+        type: string
+        required: true
+      p1_version:
+        type: string
+        required: true
+      # Pack 2 Parameters
+      p2_id:
+        type: string
+        required: false
+      p2_name:
+        type: string
+        required: false
+      p2_path:
+        type: string
+        required: false
+      p2_version:
+        type: string
+        required: false
+      # Pack 3 Parameters
+      p3_id:
+        type: string
+        required: false
+      p3_name:
+        type: string
+        required: false
+      p3_path:
+        type: string
+        required: false
+      p3_version:
+        type: string
+        required: false
 
 jobs:
   build-and-upload:
@@ -15,36 +75,42 @@ jobs:
         shell: pwsh
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
+          INPUT_MODIFY_MCMETA: ${{ inputs.modify_mcmeta }}
+          INPUT_PACK_COUNT: ${{ inputs.pack_count }}
+          INPUT_BUILD_TYPE: ${{ inputs.build_type }}
+          INPUT_APPEND_INFO: ${{ inputs.append_build_info }}
         run: |
-          # 1. Setup paths and variables
-          $configPath = ".github/workflows/config.json"
           $systime = Get-Date -Format "yyyy-MM-dd HH:mm:ss 'UTC'"
-          
-          if (-not (Test-Path $configPath)) {
-            Write-Error "Config file not found: $configPath"
-            exit 1
+          $packCount = [int]$env:INPUT_PACK_COUNT
+          $modifyMcMeta = $env:INPUT_MODIFY_MCMETA -eq "true"
+          $buildType = $env:INPUT_BUILD_TYPE
+          $appendInfo = $env:INPUT_APPEND_INFO -eq "true"
+
+          # Process input artifacts based on pack count
+          $artifacts = @()
+          if ($packCount -ge 1) {
+            $artifacts += [PSCustomObject]@{ id = "${{ inputs.p1_id }}"; name = "${{ inputs.p1_name }}"; path = "${{ inputs.p1_path }}"; version = "${{ inputs.p1_version }}" }
+          }
+          if ($packCount -ge 2) {
+            $artifacts += [PSCustomObject]@{ id = "${{ inputs.p2_id }}"; name = "${{ inputs.p2_name }}"; path = "${{ inputs.p2_path }}"; version = "${{ inputs.p2_version }}" }
+          }
+          if ($packCount -ge 3) {
+            $artifacts += [PSCustomObject]@{ id = "${{ inputs.p3_id }}"; name = "${{ inputs.p3_name }}"; path = "${{ inputs.p3_path }}"; version = "${{ inputs.p3_version }}" }
           }
 
-          # 2. Read and parse Config node
-          $jsonContent = Get-Content $configPath -Raw | ConvertFrom-Json
-          $artifacts = $jsonContent.config.artifacts
-
-          if ($null -eq $artifacts) {
-            Write-Host "No artifacts node found in config."
-            echo "count=0" >> $env:GITHUB_OUTPUT
-            exit 0
-          }
-
-          # 3. Loop through artifacts (Process up to 3)
           $count = 0
           foreach ($item in $artifacts) {
-            if ($count -ge 3) { break }
-            
             $id = $item.id
             $name = $item.name
             $path = $item.path
             $version = $item.version
-            
+
+            # Verify required fields
+            if ([string]::IsNullOrWhiteSpace($path) -or [string]::IsNullOrWhiteSpace($name)) {
+              Write-Warning "Missing information for pack index $count, skipping..."
+              continue
+            }
+
             Write-Host "------------------------------------"
             Write-Host "Processing Artifact: $name ($id)"
             Write-Host "Path: $path"
@@ -54,32 +120,53 @@ jobs:
               continue
             }
 
-            # 4. Modify pack.mcmeta
-            $mcmetaPath = Join-Path $path "pack.mcmeta"
-            if (Test-Path $mcmetaPath) {
-              Write-Host "Updating $mcmetaPath"
-              $mcmeta = Get-Content $mcmetaPath -Raw | ConvertFrom-Json
-              
-              $extraDescription = @(
-                "`n",
-                "§7Github Auto Build§r`n",
-                "§7Action Number: §n§b【$env:GITHUB_RUN_NUMBER】§r`n",
-                "§7Build Time: §n§b【$systime】§r`n"
-              )
+            # Logic to modify pack.mcmeta if required
+            if ($modifyMcMeta) {
+              $mcmetaPath = Join-Path $path "pack.mcmeta"
+              if (Test-Path $mcmetaPath) {
+                Write-Host "Updating $mcmetaPath"
+                $mcmeta = Get-Content $mcmetaPath -Raw | ConvertFrom-Json
+                
+                if ($appendInfo) {
+                  $extraDescription = @(
+                    "`n`n",
+                    " §7Datapacker Auto Build§r`n",
+                    " §8$version-$buildType$env:GITHUB_RUN_NUMBER`n",
+                    " §7Action Number: §b§n$env:GITHUB_RUN_NUMBER§r`n",
+                    " §7Build Time: §b§n$systime§r"
+                  )
+                } else {
+                  $extraDescription = @(
+                    "`n`n",
+                    " §7Datapacker Auto Build§r`n",
+                    " §8$version`n",
+                    " §7Action Number: §b§n$env:GITHUB_RUN_NUMBER§r`n",
+                    " §7Build Time: §b§n$systime§r"
+                  )
+                }
 
-              if ($mcmeta.pack.description -isnot [Array]) {
-                $mcmeta.pack.description = @($mcmeta.pack.description)
+                if ($mcmeta.pack.description -isnot [Array]) {
+                  $mcmeta.pack.description = @($mcmeta.pack.description)
+                }
+                $mcmeta.pack.description += $extraDescription
+
+                $mcmetaJson = $mcmeta | ConvertTo-Json -Depth 10
+                [System.IO.File]::WriteAllText($mcmetaPath, $mcmetaJson)
+              } else {
+                Write-Warning "mcmeta file not found at $mcmetaPath"
               }
-              $mcmeta.pack.description += $extraDescription
-
-              $mcmetaJson = $mcmeta | ConvertTo-Json -Depth 10
-              [System.IO.File]::WriteAllText($mcmetaPath, $mcmetaJson)
+            } else {
+              Write-Host "Skipping mcmeta modification as per input."
             }
 
-            # 5. Generate Artifact Name
-            $finalArtifactName = "${name}-v${version}-alpha${env:GITHUB_RUN_NUMBER}"
+            # Construct artifact name
+            if ($appendInfo) {
+              $finalArtifactName = "${name}-v${version}-${buildType}${env:GITHUB_RUN_NUMBER}"
+            } else {
+              $finalArtifactName = "${name}-v${version}"
+            }
             
-            # 6. Export to GITHUB_OUTPUT for reliability
+            # Export output
             echo "name_$count=$finalArtifactName" >> $env:GITHUB_OUTPUT
             echo "path_$count=$path" >> $env:GITHUB_OUTPUT
 
@@ -87,7 +174,6 @@ jobs:
           }
           echo "count=$count" >> $env:GITHUB_OUTPUT
 
-      # Upload steps using step outputs (steps.processor.outputs.name_0)
       - name: Upload Artifact 1
         if: steps.processor.outputs.count >= 1
         uses: actions/upload-artifact@v4
