@@ -3,16 +3,21 @@ name: Shared Package Logic
 on:
   workflow_call:
     inputs:
-      modify_mcmeta:
-        description: 'Whether to modify pack.mcmeta file'
-        required: true
-        type: boolean
-        default: true
       pack_count:
         description: 'Number of packs to process (1-3)'
         required: true
         type: number
         default: 1
+      modify_mcmeta:
+        description: 'Whether to modify pack.mcmeta file'
+        required: false
+        type: boolean
+        default: true
+      simplified_mcmeta:
+        description: 'Whether to use simplified mcmeta structure'
+        required: false
+        type: boolean
+        default: false
       build_type:
         description: 'Build stage name (e.g., alpha, beta, release)'
         required: false
@@ -75,14 +80,16 @@ jobs:
         shell: pwsh
         env:
           GITHUB_RUN_NUMBER: ${{ github.run_number }}
-          INPUT_MODIFY_MCMETA: ${{ inputs.modify_mcmeta }}
           INPUT_PACK_COUNT: ${{ inputs.pack_count }}
+          INPUT_MODIFY_MCMETA: ${{ inputs.modify_mcmeta }}
+          INPUT_SIMPLIFIED_MCMETA: ${{ inputs.simplified_mcmeta }}
           INPUT_BUILD_TYPE: ${{ inputs.build_type }}
           INPUT_APPEND_INFO: ${{ inputs.append_build_info }}
         run: |
           $systime = Get-Date -Format "yyyy-MM-dd HH:mm:ss 'UTC'"
           $packCount = [int]$env:INPUT_PACK_COUNT
           $modifyMcMeta = $env:INPUT_MODIFY_MCMETA -eq "true"
+          $simplifiedMcMeta = $env:INPUT_SIMPLIFIED_MCMETA -eq "true"
           $buildType = $env:INPUT_BUILD_TYPE
           $appendInfo = $env:INPUT_APPEND_INFO -eq "true"
 
@@ -128,21 +135,38 @@ jobs:
                 $mcmeta = Get-Content $mcmetaPath -Raw | ConvertFrom-Json
                 
                 if ($appendInfo) {
-                  $extraDescription = @(
-                    "`n`n",
-                    " §7Datapacker Auto Build§r`n",
-                    " §8$version-$buildType$env:GITHUB_RUN_NUMBER`n",
-                    " §7Action Number: §b§n$env:GITHUB_RUN_NUMBER§r`n",
-                    " §7Build Time: §b§n$systime§r"
-                  )
+                  if ($simplifiedMcMeta) {
+                    $extraDescription = @(
+                      "`n`n",
+                      " §7Datapacker Auto Build§r`n",
+                      " §7$version-$buildType$env:GITHUB_RUN_NUMBER§r`n",
+                      " §7$systime§r"
+                    )
+                  } else {
+                    $extraDescription = @(
+                      "`n`n",
+                      " §7Datapacker Auto Build§r`n",
+                      " §8Version: §7$version-$buildType$env:GITHUB_RUN_NUMBER§r`n",
+                      " §8Action Number: §7$env:GITHUB_RUN_NUMBER§r`n",
+                      " §8Build Time: §7$systime§r"
+                    )
+                  }
                 } else {
-                  $extraDescription = @(
-                    "`n`n",
-                    " §7Datapacker Auto Build§r`n",
-                    " §8$version`n",
-                    " §7Action Number: §b§n$env:GITHUB_RUN_NUMBER§r`n",
-                    " §7Build Time: §b§n$systime§r"
-                  )
+                  if ($simplifiedMcMeta) {
+                    $extraDescription = @(
+                      "`n`n",
+                      " §7Datapacker Auto Build§r`n",
+                      " §7Build On: $systime§r"
+                    )
+                  } else {
+                    $extraDescription = @(
+                      "`n`n",
+                      " §7Datapacker Auto Build§r`n",
+                      " §8Version: §7$version§r`n",
+                      " §8Action Number: §7$env:GITHUB_RUN_NUMBER§r`n",
+                      " §8Build Time: §7$systime§r"
+                    )
+                  }
                 }
 
                 if ($mcmeta.pack.description -isnot [Array]) {
